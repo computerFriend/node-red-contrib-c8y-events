@@ -1,4 +1,4 @@
-<script type="text/x-red" data-template-name="http-send-multipart">
+<script type="text/x-red" data-template-name="c8y-events">
 	<div class="form-row">
 		<label for="node-input-name"><i class="fa fa-tag"></i> Name </label>
 		<input type="text" id="node-input-name" data-i18n="[placeholder]common.label.name">
@@ -46,7 +46,7 @@
 	</div>
 </script>
 
-<script type="text/x-red" data-help-name="http-send-multipart">
+<script type="text/x-red" data-help-name="c8y-events">
 	<p>Provides a node for posting multipart form-data.</p>
 	<p>The URL must be configured in the node.</p>
 	<ul>
@@ -68,9 +68,9 @@
 </script>
 
 <script type="text/javascript">
-	RED.nodes.registerType('http-send-multipart', {
+	RED.nodes.registerType('c8y-events', {
 		category: 'function',
-		color: "rgb(179, 211, 249)",
+		color: "rgb(106, 210, 252)",
 		defaults: {
 			name: {
 				value: ""
@@ -101,7 +101,7 @@
 		outputs: 1,
 		icon: "white-globe.png",
 		label: function() {
-			return this.name || "httpSendMultipart";
+			return this.name || "Cumulocity Events";
 		},
 		labelStyle: function() {
 			return this.name ? "node_label_italic" : "";
