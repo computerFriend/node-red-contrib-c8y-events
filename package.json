@@ -25,6 +25,9 @@
     }
   },
   "dependencies": {
-    "request": "^2.87.0"
+    "base-64": "^0.1.0",
+    "query-string": "^6.1.0",
+    "request": "^2.87.0",
+    "utf8": "^3.0.0"
   }
 }
