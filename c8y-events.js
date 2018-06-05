@@ -1,7 +1,12 @@
-// require in libs
-var request = require('request');
 
-var filepath = "default.csv"; // initializing filepath
+// Require in libraries
+var request = require('request'),
+	queryString = require('query-string'),
+	utf8 = require('utf8'),
+	base64 = require('base-64');
+
+// define constants
+var	basePath = '/event/events'; // this is a constant, dependent on c8y
 
 module.exports = function(RED) {
 
@@ -9,9 +14,6 @@ module.exports = function(RED) {
 		// Setup node
 		RED.nodes.createNode(this, n);
 		var node = this;
-		var nodeUrl = n.url;
-
-		var isTemplatedUrl = (nodeUrl || "").indexOf("{{") != -1;
 
 		this.ret = n.ret || "txt"; // default return type is text
 		if (RED.settings.httpRequestTimeout) {
@@ -23,93 +25,124 @@ module.exports = function(RED) {
 		// 1) Process inputs to Node
 		this.on("input", function(msg) {
 
-			// TODO: add ability to select other input types (not just files)
-
-			// Look for filepath - // TODO improve logic
-
-			if (!n.filepath && !msg.filepath) {
-				// throw an error if no filepath
-				node.warn(RED._("Error: no filepath found to send file."));
-				msg.error = "Filepath was not defined";
-				msg.statusCode = 400;
-				node.send(msg); // TODO: make sure this escapes entirely; need better error-handling here
-			} else {
-				if (n.filepath) {
-					filepath = n.filepath;
-				} else if (msg.filepath) { // TODO: improve logic
-					filepath = msg.filepath;
-				}
+			var tenant = n.tenant;
+			var domain = n.domain; // TODO: get this from settings value in the future
 
 				node.status({
 					fill: "blue",
 					shape: "dot",
-					text: "Sending multipart request..."
+					text: "Fetching events..."
 				});
-				var url = nodeUrl; // TODO add ability to take this from the settings.js config file
 
+				// Build query obj
+				var reqQuery = {};
 
-				if (!url) {
-					node.error(RED._("c8yEvents.errors.no-url"), msg);
+				if (n.pageSize) {
+					reqQuery.pageSize = n.pageSize;
+				} else {
+					reqQuery.pageSize = 10; // TODO: externalize default value
+				}
+
+				if (n.type) reqQuery.type = n.type;
+				if (n.status) reqQuery.status = n.status; // TODO: make status a dropdown menu
+				if (n.deviceId) reqQuery.source = n.deviceId;
+
+				// Stringify query obj
+				var thisQueryString = queryString.stringify(reqQuery);
+				var pathAndQuery = basePath + '?' + thisQueryString;
+
+				// Adding auth header // TODO: develop a more secure way to do this
+				var encodedCreds;
+				if (this.credentials && this.credentials.user) {
+					var rawCreds = tenant + '/' + this.credentials.user + ':' + this.credentials.password;
+					var byteCreds = utf8.encode(rawCreds);
+					encodedCreds = base64.encode(byteCreds);
+					// Trim off trailing =
+					if (encodedCreds[encodedCreds.length-1]== '=') {
+						encodedCreds = encodedCreds.substring(0,encodedCreds.length-2);
+					}
+
+				} // else if: TODO: check for creds in settings.js file
+				// encodedCreds = value.from.settings
+				else {
+					msg.error = "Missing credentials";
+					msg.statusCode = 403;
+					msg.payload = "error: Missing Credentials";
 					node.status({
 						fill: "red",
 						shape: "ring",
-						text: (RED._("c8yEvents.errors.no-url"))
+						text: "Missing credentials!"
 					});
-					return;
-				}
-
-
-				// Add auth if it exists
-				if (this.credentials && this.credentials.user) {
-					var urlTail = url.substring(url.indexOf('://') + 3); // hacky but it works. don't judge me
-					var username = this.credentials.user,
-						password = this.credentials.password;
-					url = 'https://' + username + ':' + password + '@' + urlTail;
-
+					return node.send(msg);
 				}
 
 				var respBody, respStatus;
+				var options = {
+					url: "https://" + domain + basePath + '?' + thisQueryString,
+					headers: {
+						'Authorization': 'Basic ' + encodedCreds
+					}
+				};
 
-				var thisReq = request.post(url, function(err, resp, body) {
+				var thisReq = request.get(options, function(err, resp, body) {
 
 					if (err || !resp) {
-						// node.error(RED._("c8yEvents.errors.no-url"), msg);
-						var statusText = "Unexpected error";
+						var nodeStatusText = "Unexpected error";
 						if (err) {
-							statusText = err;
+							msg.payload = err.toString();
+							msg.statusCode = 499;
+							nodeStatusText = 'Error';
 						} else if (!resp) {
-							statusText = "No response object";
+							msg.statusCode = 500;
+							msg.payload = "Server error: No response object";
+							nodeStatusText = "Server error";
 						}
 						node.status({
 							fill: "red",
 							shape: "ring",
-							text: statusText
+							text: nodeStatusText
 						});
-					}
-					msg.payload = body;
-					msg.statusCode = resp.statusCode || resp.status;
-					msg.headers = resp.headers;
+						return node.send(msg);
+					} else {
 
-					if (node.ret !== "bin") {
-						msg.payload = body.toString('utf8'); // txt
+						var events = JSON.parse(body).events;
+						msg.payload = events;
+						msg.statusCode = resp.statusCode || resp.status;
+						if (events.length < 1) msg.statusCode = 244;
+						msg.headers = resp.headers;
 
-						if (node.ret === "obj") {
-							try {
-								msg.payload = JSON.parse(body);
-							} catch (e) {
-								node.warn(RED._("c8yEvents.errors.json-error"));
+						// Error-handling
+						if (body.error || resp.statusCode > 299) {
+							node.status({
+								fill: "red",
+								shape: "ring",
+								text: JSON.parse(body).message
+							});
+						}
+
+
+						// Transform output
+						if (node.ret !== "bin") {
+							msg.payload = JSON.stringify(events).toString('utf8'); // txt
+
+							if (node.ret === "obj") {
+								try {
+									msg.payload = events;
+								} catch (e) {
+									node.warn(RED._("c8yevents.errors.json-error"));
+								}
 							}
 						}
 					}
 
 					node.send(msg);
-				});
+					node.status({});
 
-			}
+				});
 
 		}); // end of on.input
 
-	} // end of c8yEvents fxn
+	} // end of c8yevents fxn
 
 	// Register the Node
 	RED.nodes.registerType("c8y-events", c8yEvents, {
