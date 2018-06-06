@@ -49,7 +49,6 @@ module.exports = function(RED) {
 
 				// Stringify query obj
 				var thisQueryString = queryString.stringify(reqQuery);
-				var pathAndQuery = basePath + '?' + thisQueryString;
 
 				// Adding auth header // TODO: develop a more secure way to do this
 				var encodedCreds;
